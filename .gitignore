@@ -1,0 +1,20 @@
+# Ambiente virtual
+.venv/
+venv/
+
+# Arquivos gerados pelo Python
+__pycache__/
+*.pyc
+
+# Cache dos testes
+.pytest_cache/
+
+# Credenciais e configurações locais
+.env
+*.pem
+*.key
+
+# Editores e sistema operacional
+.vscode/
+.DS_Store
+Thumbs.db
