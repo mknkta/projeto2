@@ -36,3 +36,18 @@ def adicionar_imovel():
 
 if __name__ == "__main__":
     app.run(debug=True)
+
+@app.route("/imoveis/<int:imovel_id>", methods=["PUT"])
+def atualizar_imovel(imovel_id):
+    dados = request.get_json()
+    
+    for imovel in imoveis_db:
+        if imovel["id"] == imovel_id:
+            # Atualiza cada campo com o valor do JSON recebido
+            imovel["titulo"] = dados["titulo"]
+            imovel["tipo"] = dados["tipo"]
+            imovel["cidade"] = dados["cidade"]
+            imovel["preco"] = dados["preco"]
+            return jsonify(imovel), 200
+
+    return jsonify({"erro": "Imóvel não encontrado"}), 404
