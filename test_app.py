@@ -63,3 +63,21 @@ def test_atualizar_imovel_nao_encontrado(client):
     response = client.put("/imoveis/999999", json=dados)
     
     assert response.status_code == 404
+def test_remover_imovel_com_sucesso(client):
+    # 1. Cria um imóvel temporário para deletar
+    novo = {"titulo": "Terreno Vazio", "tipo": "terreno", "cidade": "Curitiba", "preco": 150000.0}
+    res_post = client.post("/imoveis", json=novo)
+    imovel_id = res_post.get_json()["id"]
+
+    # 2. Faz a requisição DELETE
+    response = client.delete(f"/imoveis/{imovel_id}")
+    assert response.status_code == 204
+
+    # 3. Prova real: tenta buscar o imóvel deletado e espera receber 404
+    res_get = client.get(f"/imoveis/{imovel_id}")
+    assert res_get.status_code == 404
+
+
+def test_remover_imovel_nao_encontrado(client):
+    response = client.delete("/imoveis/999999")
+    assert response.status_code == 404
