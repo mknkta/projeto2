@@ -81,3 +81,30 @@ def test_remover_imovel_com_sucesso(client):
 def test_remover_imovel_nao_encontrado(client):
     response = client.delete("/imoveis/999999")
     assert response.status_code == 404
+
+def test_filtrar_imoveis_por_tipo(client):
+    # 1. Cadastra dois imóveis de tipos diferentes
+    client.post("/imoveis", json={"titulo": "Casa 1", "tipo": "casa", "cidade": "SP", "preco": 300000.0})
+    client.post("/imoveis", json={"titulo": "Apto 1", "tipo": "apartamento", "cidade": "SP", "preco": 400000.0})
+
+    # 2. Busca filtrando apenas por tipo "casa"
+    response = client.get("/imoveis?tipo=casa")
+    assert response.status_code == 200
+    
+    dados = response.get_json()
+    assert len(dados) >= 1
+    assert all(imovel["tipo"] == "casa" for imovel in dados)
+
+
+def test_filtrar_imoveis_por_cidade(client):
+    # 1. Cadastra dois imóveis de cidades diferentes
+    client.post("/imoveis", json={"titulo": "Casa Santos", "tipo": "casa", "cidade": "Santos", "preco": 500000.0})
+    client.post("/imoveis", json={"titulo": "Casa SP", "tipo": "casa", "cidade": "Sao Paulo", "preco": 600000.0})
+
+    # 2. Busca filtrando apenas por cidade "Santos"
+    response = client.get("/imoveis?cidade=Santos")
+    assert response.status_code == 200
+    
+    dados = response.get_json()
+    assert len(dados) >= 1
+    assert all(imovel["cidade"] == "Santos" for imovel in dados)

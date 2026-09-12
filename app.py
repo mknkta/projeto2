@@ -5,10 +5,21 @@ app = Flask(__name__)
 imoveis_db = []
 
 
-# 1. LISTAR TODOS OS IMÓVEIS (GET)
+# 1. LISTAR TODOS OS IMÓVEIS (com suporte a filtros por tipo e cidade)
 @app.route("/imoveis", methods=["GET"])
 def listar_imoveis():
-    return jsonify(imoveis_db), 200
+    tipo = request.args.get("tipo")
+    cidade = request.args.get("cidade")
+
+    resultado = imoveis_db
+
+    if tipo:
+        resultado = [i for i in resultado if i["tipo"].lower() == tipo.lower()]
+
+    if cidade:
+        resultado = [i for i in resultado if i["cidade"].lower() == cidade.lower()]
+
+    return jsonify(resultado), 200
 
 
 # 2. ADICIONAR IMÓVEL (POST)
@@ -60,6 +71,5 @@ def remover_imovel(imovel_id):
     return jsonify({"erro": "Imóvel não encontrado"}), 404
 
 
-# O bloco de execução do Flask fica SEMPRE no final do arquivo
 if __name__ == "__main__":
     app.run(debug=True)
