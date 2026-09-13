@@ -1,32 +1,91 @@
+import os
 from flask import Flask, jsonify, request
+import pymysql
+from dotenv import load_dotenv
+
+# Carrega as variáveis do arquivo .env
+load_dotenv()
 
 app = Flask(__name__)
 
-imoveis_db = []
+
+# Função para conectar ao MySQL no Aiven
+def get_db_connection():
+    return pymysql.connect(
+        host=os.getenv("DB_HOST"),
+        port=int(os.getenv("DB_PORT", 3306)),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        database=os.getenv("DB_NAME"),
+        cursorclass=pymysql.cursors.DictCursor,
+        ssl={"ssl": {}},  # Exigido pelo Aiven
+    )
 
 
-# 1. LISTAR TODOS OS IMÓVEIS (com suporte a filtros por tipo e cidade)
+# Cria a tabela no banco automaticamente ao iniciar a API
+def init_db():
+    conn = get_db_connection()
+    with conn.cursor() as cursor:
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS imoveis (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                titulo VARCHAR(255) NOT NULL,
+                tipo VARCHAR(50) NOT NULL,
+                cidade VARCHAR(100) NOT NULL,
+                preco FLOAT NOT NULL
+            )
+        """
+        )
+    conn.commit()
+    conn.close()
+
+
+init_db()
+
+
+# 1. LISTAR TODOS OS IMÓVEIS (com filtros)
 @app.route("/imoveis", methods=["GET"])
 def listar_imoveis():
     tipo = request.args.get("tipo")
     cidade = request.args.get("cidade")
 
-    resultado = imoveis_db
+    query = "SELECT * FROM imoveis WHERE 1=1"
+    params = []
 
     if tipo:
-        resultado = [i for i in resultado if i["tipo"].lower() == tipo.lower()]
+        query += " AND LOWER(tipo) = LOWER(%s)"
+        params.append(tipo)
 
     if cidade:
-        resultado = [i for i in resultado if i["cidade"].lower() == cidade.lower()]
+        query += " AND LOWER(cidade) = LOWER(%s)"
+        params.append(cidade)
 
-    return jsonify(resultado), 200
+    conn = get_db_connection()
+    with conn.cursor() as cursor:
+        cursor.execute(query, params)
+        imoveis = cursor.fetchall()
+    conn.close()
+
+    return jsonify(imoveis), 200
 
 
 # 2. ADICIONAR IMÓVEL (POST)
 @app.route("/imoveis", methods=["POST"])
 def adicionar_imovel():
     dados = request.get_json()
-    novo_id = len(imoveis_db) + 1
+
+    conn = get_db_connection()
+    with conn.cursor() as cursor:
+        sql = "INSERT INTO imoveis (titulo, tipo, cidade, preco) VALUES (%s, %s, %s, %s)"
+        cursor.execute(
+            sql,
+            (dados["titulo"], dados["tipo"], dados["cidade"], dados["preco"]),
+        )
+        novo_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
     novo_imovel = {
         "id": novo_id,
         "titulo": dados["titulo"],
@@ -34,16 +93,21 @@ def adicionar_imovel():
         "cidade": dados["cidade"],
         "preco": dados["preco"],
     }
-    imoveis_db.append(novo_imovel)
     return jsonify(novo_imovel), 201
 
 
 # 3. BUSCAR IMÓVEL POR ID (GET)
 @app.route("/imoveis/<int:imovel_id>", methods=["GET"])
 def buscar_imovel_por_id(imovel_id):
-    for imovel in imoveis_db:
-        if imovel["id"] == imovel_id:
-            return jsonify(imovel), 200
+    conn = get_db_connection()
+    with conn.cursor() as cursor:
+        cursor.execute("SELECT * FROM imoveis WHERE id = %s", (imovel_id,))
+        imovel = cursor.fetchone()
+    conn.close()
+
+    if imovel:
+        return jsonify(imovel), 200
+
     return jsonify({"erro": "Imóvel não encontrado"}), 404
 
 
@@ -51,24 +115,51 @@ def buscar_imovel_por_id(imovel_id):
 @app.route("/imoveis/<int:imovel_id>", methods=["PUT"])
 def atualizar_imovel(imovel_id):
     dados = request.get_json()
-    for imovel in imoveis_db:
-        if imovel["id"] == imovel_id:
-            imovel["titulo"] = dados["titulo"]
-            imovel["tipo"] = dados["tipo"]
-            imovel["cidade"] = dados["cidade"]
-            imovel["preco"] = dados["preco"]
-            return jsonify(imovel), 200
-    return jsonify({"erro": "Imóvel não encontrado"}), 404
+
+    conn = get_db_connection()
+    with conn.cursor() as cursor:
+        # Verifica se o imóvel existe
+        cursor.execute("SELECT * FROM imoveis WHERE id = %s", (imovel_id,))
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({"erro": "Imóvel não encontrado"}), 404
+
+        # Atualiza o registro
+        sql = "UPDATE imoveis SET titulo=%s, tipo=%s, cidade=%s, preco=%s WHERE id=%s"
+        cursor.execute(
+            sql,
+            (
+                dados["titulo"],
+                dados["tipo"],
+                dados["cidade"],
+                dados["preco"],
+                imovel_id,
+            ),
+        )
+        conn.commit()
+
+        cursor.execute("SELECT * FROM imoveis WHERE id = %s", (imovel_id,))
+        imovel_atualizado = cursor.fetchone()
+
+    conn.close()
+    return jsonify(imovel_atualizado), 200
 
 
 # 5. REMOVER IMÓVEL (DELETE)
 @app.route("/imoveis/<int:imovel_id>", methods=["DELETE"])
 def remover_imovel(imovel_id):
-    for imovel in imoveis_db:
-        if imovel["id"] == imovel_id:
-            imoveis_db.remove(imovel)
-            return "", 204
-    return jsonify({"erro": "Imóvel não encontrado"}), 404
+    conn = get_db_connection()
+    with conn.cursor() as cursor:
+        cursor.execute("SELECT * FROM imoveis WHERE id = %s", (imovel_id,))
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({"erro": "Imóvel não encontrado"}), 404
+
+        cursor.execute("DELETE FROM imoveis WHERE id = %s", (imovel_id,))
+        conn.commit()
+
+    conn.close()
+    return "", 204
 
 
 if __name__ == "__main__":
