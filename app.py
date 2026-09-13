@@ -3,13 +3,11 @@ from flask import Flask, jsonify, request
 import pymysql
 from dotenv import load_dotenv
 
-# Carrega as variáveis do arquivo .env
 load_dotenv()
 
 app = Flask(__name__)
 
 
-# Função para conectar ao MySQL no Aiven
 def get_db_connection():
     return pymysql.connect(
         host=os.getenv("DB_HOST"),
@@ -18,11 +16,10 @@ def get_db_connection():
         password=os.getenv("DB_PASSWORD"),
         database=os.getenv("DB_NAME"),
         cursorclass=pymysql.cursors.DictCursor,
-        ssl={"ssl": {}},  # Exigido pelo Aiven
+        ssl={"ssl": {}},
     )
 
 
-# Cria a tabela no banco automaticamente ao iniciar a API
 def init_db():
     conn = get_db_connection()
     with conn.cursor() as cursor:
@@ -44,7 +41,18 @@ def init_db():
 init_db()
 
 
-# 1. LISTAR TODOS OS IMÓVEIS (com filtros)
+# Função Auxiliar para Nível 3 de Richardson (HATEOAS)
+def adicionar_links(imovel):
+    imovel_com_links = dict(imovel)
+    imovel_com_links["_links"] = {
+        "self": f"/imoveis/{imovel['id']}",
+        "update": f"/imoveis/{imovel['id']}",
+        "delete": f"/imoveis/{imovel['id']}",
+    }
+    return imovel_com_links
+
+
+# 1. LISTAR TODOS OS IMÓVEIS (com filtros e HATEOAS)
 @app.route("/imoveis", methods=["GET"])
 def listar_imoveis():
     tipo = request.args.get("tipo")
@@ -67,10 +75,11 @@ def listar_imoveis():
         imoveis = cursor.fetchall()
     conn.close()
 
-    return jsonify(imoveis), 200
+    imoveis_com_links = [adicionar_links(i) for i in imoveis]
+    return jsonify(imoveis_com_links), 200
 
 
-# 2. ADICIONAR IMÓVEL (POST)
+# 2. ADICIONAR IMÓVEL (POST com HATEOAS)
 @app.route("/imoveis", methods=["POST"])
 def adicionar_imovel():
     dados = request.get_json()
@@ -93,10 +102,10 @@ def adicionar_imovel():
         "cidade": dados["cidade"],
         "preco": dados["preco"],
     }
-    return jsonify(novo_imovel), 201
+    return jsonify(adicionar_links(novo_imovel)), 201
 
 
-# 3. BUSCAR IMÓVEL POR ID (GET)
+# 3. BUSCAR IMÓVEL POR ID (GET com HATEOAS)
 @app.route("/imoveis/<int:imovel_id>", methods=["GET"])
 def buscar_imovel_por_id(imovel_id):
     conn = get_db_connection()
@@ -106,25 +115,23 @@ def buscar_imovel_por_id(imovel_id):
     conn.close()
 
     if imovel:
-        return jsonify(imovel), 200
+        return jsonify(adicionar_links(imovel)), 200
 
     return jsonify({"erro": "Imóvel não encontrado"}), 404
 
 
-# 4. ATUALIZAR IMÓVEL (PUT)
+# 4. ATUALIZAR IMÓVEL (PUT com HATEOAS)
 @app.route("/imoveis/<int:imovel_id>", methods=["PUT"])
 def atualizar_imovel(imovel_id):
     dados = request.get_json()
 
     conn = get_db_connection()
     with conn.cursor() as cursor:
-        # Verifica se o imóvel existe
         cursor.execute("SELECT * FROM imoveis WHERE id = %s", (imovel_id,))
         if not cursor.fetchone():
             conn.close()
             return jsonify({"erro": "Imóvel não encontrado"}), 404
 
-        # Atualiza o registro
         sql = "UPDATE imoveis SET titulo=%s, tipo=%s, cidade=%s, preco=%s WHERE id=%s"
         cursor.execute(
             sql,
@@ -142,7 +149,7 @@ def atualizar_imovel(imovel_id):
         imovel_atualizado = cursor.fetchone()
 
     conn.close()
-    return jsonify(imovel_atualizado), 200
+    return jsonify(adicionar_links(imovel_atualizado)), 200
 
 
 # 5. REMOVER IMÓVEL (DELETE)

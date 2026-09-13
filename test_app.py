@@ -108,3 +108,14 @@ def test_filtrar_imoveis_por_cidade(client):
     dados = response.get_json()
     assert len(dados) >= 1
     assert all(imovel["cidade"] == "Santos" for imovel in dados)
+    
+def test_respostas_contem_links_hateoas(client):
+    novo = {"titulo": "Cobertura", "tipo": "apartamento", "cidade": "SP", "preco": 1200000.0}
+    response = client.post("/imoveis", json=novo)
+    dados = response.get_json()
+
+    # Valida se a propriedade _links existe e contém self, update e delete
+    assert "_links" in dados
+    assert "self" in dados["_links"]
+    assert "update" in dados["_links"]
+    assert "delete" in dados["_links"]
