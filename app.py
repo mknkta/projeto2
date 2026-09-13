@@ -41,6 +41,13 @@ def init_db():
 init_db()
 
 
+CAMPOS_OBRIGATORIOS = ["titulo", "tipo", "cidade", "preco"]
+
+
+def campos_faltando(dados):
+    return [c for c in CAMPOS_OBRIGATORIOS if c not in dados]
+
+
 # Função Auxiliar para Nível 3 de Richardson (HATEOAS)
 def adicionar_links(imovel):
     imovel_com_links = dict(imovel)
@@ -82,7 +89,10 @@ def listar_imoveis():
 # 2. ADICIONAR IMÓVEL (POST com HATEOAS)
 @app.route("/imoveis", methods=["POST"])
 def adicionar_imovel():
-    dados = request.get_json()
+    dados = request.get_json(silent=True) or {}
+    faltando = campos_faltando(dados)
+    if faltando:
+        return jsonify({"erro": f"Campos obrigatórios ausentes: {faltando}"}), 400
 
     conn = get_db_connection()
     with conn.cursor() as cursor:
@@ -123,7 +133,10 @@ def buscar_imovel_por_id(imovel_id):
 # 4. ATUALIZAR IMÓVEL (PUT com HATEOAS)
 @app.route("/imoveis/<int:imovel_id>", methods=["PUT"])
 def atualizar_imovel(imovel_id):
-    dados = request.get_json()
+    dados = request.get_json(silent=True) or {}
+    faltando = campos_faltando(dados)
+    if faltando:
+        return jsonify({"erro": f"Campos obrigatórios ausentes: {faltando}"}), 400
 
     conn = get_db_connection()
     with conn.cursor() as cursor:

@@ -36,6 +36,25 @@ def test_adicionar_imovel_com_sucesso(client):
     
     
     
+def test_adicionar_imovel_sem_campos_obrigatorios_retorna_400(client):
+    response = client.post("/imoveis", json={"titulo": "Casa Incompleta"})
+    assert response.status_code == 400
+
+
+def test_buscar_imovel_por_id_com_sucesso(client):
+    novo = {"titulo": "Sitio", "tipo": "terreno", "cidade": "Ibiuna", "preco": 200000.0}
+    res_post = client.post("/imoveis", json=novo)
+    imovel_id = res_post.get_json()["id"]
+
+    response = client.get(f"/imoveis/{imovel_id}")
+    assert response.status_code == 200
+    dados = response.get_json()
+    assert dados["titulo"] == "Sitio"
+    assert dados["tipo"] == "terreno"
+    assert dados["cidade"] == "Ibiuna"
+    assert dados["preco"] == 200000.0
+
+
 def test_atualizar_imovel_com_sucesso(client):
     # 1. Criamos um imóvel para ter certeza do que vamos atualizar
     novo = {"titulo": "Casa Velha", "tipo": "casa", "cidade": "Santos", "preco": 300000.0}
@@ -55,6 +74,15 @@ def test_atualizar_imovel_com_sucesso(client):
     assert response.status_code == 200
     assert response.get_json()["titulo"] == "Casa Reformada"
     assert response.get_json()["preco"] == 450000.0
+
+
+def test_atualizar_imovel_sem_campos_obrigatorios_retorna_400(client):
+    novo = {"titulo": "Casa", "tipo": "casa", "cidade": "Santos", "preco": 300000.0}
+    res_post = client.post("/imoveis", json=novo)
+    imovel_id = res_post.get_json()["id"]
+
+    response = client.put(f"/imoveis/{imovel_id}", json={"titulo": "Sem os outros campos"})
+    assert response.status_code == 400
 
 
 def test_atualizar_imovel_nao_encontrado(client):
