@@ -1,5 +1,38 @@
+import os
+import pymysql
 import pytest
+from dotenv import load_dotenv
+
+# Os testes usam um banco separado (ex: defaultdb_teste) para não sujar os dados reais
+load_dotenv()
+os.environ["DB_NAME"] += "_teste"
+with pymysql.connect(
+    host=os.getenv("DB_HOST"),
+    port=int(os.getenv("DB_PORT", 3306)),
+    user=os.getenv("DB_USER"),
+    password=os.getenv("DB_PASSWORD"),
+    ssl={"ssl": {}},
+) as conn:
+    conn.cursor().execute(f"CREATE DATABASE IF NOT EXISTS {os.environ['DB_NAME']}")
+
 from app import app
+
+
+# Imóvel base no formato da tabela do imoveis.sql
+IMOVEL = {
+    "logradouro": "Rua das Flores",
+    "tipo_logradouro": "Rua",
+    "bairro": "Gonzaga",
+    "cidade": "Santos",
+    "cep": "11060",
+    "tipo": "casa",
+    "valor": 750000.0,
+    "data_aquisicao": "2020-01-15",
+}
+
+
+def imovel(**campos):
+    return {**IMOVEL, **campos}
 
 
 @pytest.fixture
@@ -14,86 +47,71 @@ def test_listar_todos_imoveis_retorna_200_e_lista(client):
     assert response.status_code == 200
     assert response.is_json
     assert isinstance(response.get_json(), list)
-    
+
 def test_adicionar_imovel_com_sucesso(client):
-    novo_imovel = {
-        "titulo": "Casa de Praia",
-        "tipo": "casa",
-        "cidade": "Santos",
-        "preco": 750000.0
-    }
-    
     # Faz um POST enviando dados no formato JSON
-    response = client.post("/imoveis", json=novo_imovel)
-    
+    response = client.post("/imoveis", json=IMOVEL)
+
     # 201 Created é o padrao REST para criacao com sucesso
     assert response.status_code == 201
     assert response.is_json
-    
+
     dados = response.get_json()
     assert "id" in dados
-    assert dados["titulo"] == "Casa de Praia"
-    
-    
-    
+    assert dados["logradouro"] == "Rua das Flores"
+
+
+
 def test_adicionar_imovel_sem_campos_obrigatorios_retorna_400(client):
-    response = client.post("/imoveis", json={"titulo": "Casa Incompleta"})
+    response = client.post("/imoveis", json={"logradouro": "Rua Incompleta"})
     assert response.status_code == 400
 
 
 def test_buscar_imovel_por_id_com_sucesso(client):
-    novo = {"titulo": "Sitio", "tipo": "terreno", "cidade": "Ibiuna", "preco": 200000.0}
+    novo = imovel(logradouro="Estrada do Sitio", tipo="terreno", cidade="Ibiuna", valor=200000.0)
     res_post = client.post("/imoveis", json=novo)
     imovel_id = res_post.get_json()["id"]
 
     response = client.get(f"/imoveis/{imovel_id}")
     assert response.status_code == 200
     dados = response.get_json()
-    assert dados["titulo"] == "Sitio"
+    assert dados["logradouro"] == "Estrada do Sitio"
     assert dados["tipo"] == "terreno"
     assert dados["cidade"] == "Ibiuna"
-    assert dados["preco"] == 200000.0
+    assert dados["valor"] == 200000.0
 
 
 def test_atualizar_imovel_com_sucesso(client):
     # 1. Criamos um imóvel para ter certeza do que vamos atualizar
-    novo = {"titulo": "Casa Velha", "tipo": "casa", "cidade": "Santos", "preco": 300000.0}
-    res_post = client.post("/imoveis", json=novo)
+    res_post = client.post("/imoveis", json=imovel(valor=300000.0))
     imovel_id = res_post.get_json()["id"]
 
     # 2. Enviamos requisição PUT com os dados novos
-    dados_atualizados = {
-        "titulo": "Casa Reformada",
-        "tipo": "casa",
-        "cidade": "Santos",
-        "preco": 450000.0
-    }
+    dados_atualizados = imovel(logradouro="Rua Reformada", valor=450000.0)
     response = client.put(f"/imoveis/{imovel_id}", json=dados_atualizados)
 
     # 3. Validamos a resposta
     assert response.status_code == 200
-    assert response.get_json()["titulo"] == "Casa Reformada"
-    assert response.get_json()["preco"] == 450000.0
+    assert response.get_json()["logradouro"] == "Rua Reformada"
+    assert response.get_json()["valor"] == 450000.0
 
 
 def test_atualizar_imovel_sem_campos_obrigatorios_retorna_400(client):
-    novo = {"titulo": "Casa", "tipo": "casa", "cidade": "Santos", "preco": 300000.0}
-    res_post = client.post("/imoveis", json=novo)
+    res_post = client.post("/imoveis", json=IMOVEL)
     imovel_id = res_post.get_json()["id"]
 
-    response = client.put(f"/imoveis/{imovel_id}", json={"titulo": "Sem os outros campos"})
+    response = client.put(f"/imoveis/{imovel_id}", json={"logradouro": "Sem os outros campos"})
     assert response.status_code == 400
 
 
 def test_atualizar_imovel_nao_encontrado(client):
     # Tentamos atualizar um ID inexistente
-    dados = {"titulo": "Novo Titulo", "tipo": "casa", "cidade": "Santos", "preco": 100000.0}
-    response = client.put("/imoveis/999999", json=dados)
-    
+    response = client.put("/imoveis/999999", json=IMOVEL)
+
     assert response.status_code == 404
 def test_remover_imovel_com_sucesso(client):
     # 1. Cria um imóvel temporário para deletar
-    novo = {"titulo": "Terreno Vazio", "tipo": "terreno", "cidade": "Curitiba", "preco": 150000.0}
+    novo = imovel(tipo="terreno", cidade="Curitiba", valor=150000.0)
     res_post = client.post("/imoveis", json=novo)
     imovel_id = res_post.get_json()["id"]
 
@@ -112,34 +130,33 @@ def test_remover_imovel_nao_encontrado(client):
 
 def test_filtrar_imoveis_por_tipo(client):
     # 1. Cadastra dois imóveis de tipos diferentes
-    client.post("/imoveis", json={"titulo": "Casa 1", "tipo": "casa", "cidade": "SP", "preco": 300000.0})
-    client.post("/imoveis", json={"titulo": "Apto 1", "tipo": "apartamento", "cidade": "SP", "preco": 400000.0})
+    client.post("/imoveis", json=imovel(tipo="casa", cidade="SP"))
+    client.post("/imoveis", json=imovel(tipo="apartamento", cidade="SP"))
 
     # 2. Busca filtrando apenas por tipo "casa"
     response = client.get("/imoveis?tipo=casa")
     assert response.status_code == 200
-    
+
     dados = response.get_json()
     assert len(dados) >= 1
-    assert all(imovel["tipo"] == "casa" for imovel in dados)
+    assert all(i["tipo"] == "casa" for i in dados)
 
 
 def test_filtrar_imoveis_por_cidade(client):
     # 1. Cadastra dois imóveis de cidades diferentes
-    client.post("/imoveis", json={"titulo": "Casa Santos", "tipo": "casa", "cidade": "Santos", "preco": 500000.0})
-    client.post("/imoveis", json={"titulo": "Casa SP", "tipo": "casa", "cidade": "Sao Paulo", "preco": 600000.0})
+    client.post("/imoveis", json=imovel(cidade="Santos"))
+    client.post("/imoveis", json=imovel(cidade="Sao Paulo"))
 
     # 2. Busca filtrando apenas por cidade "Santos"
     response = client.get("/imoveis?cidade=Santos")
     assert response.status_code == 200
-    
+
     dados = response.get_json()
     assert len(dados) >= 1
-    assert all(imovel["cidade"] == "Santos" for imovel in dados)
-    
+    assert all(i["cidade"] == "Santos" for i in dados)
+
 def test_respostas_contem_links_hateoas(client):
-    novo = {"titulo": "Cobertura", "tipo": "apartamento", "cidade": "SP", "preco": 1200000.0}
-    response = client.post("/imoveis", json=novo)
+    response = client.post("/imoveis", json=imovel(tipo="apartamento", valor=1200000.0))
     dados = response.get_json()
 
     # Valida se a propriedade _links existe e contém self, update e delete

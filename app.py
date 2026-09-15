@@ -26,11 +26,15 @@ def init_db():
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS imoveis (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                titulo VARCHAR(255) NOT NULL,
-                tipo VARCHAR(50) NOT NULL,
-                cidade VARCHAR(100) NOT NULL,
-                preco FLOAT NOT NULL
+                id INTEGER PRIMARY KEY AUTO_INCREMENT,
+                logradouro TEXT NOT NULL,
+                tipo_logradouro TEXT,
+                bairro TEXT,
+                cidade TEXT NOT NULL,
+                cep TEXT,
+                tipo TEXT,
+                valor DOUBLE,  -- no Aiven (modo ANSI) REAL vira FLOAT e perde os centavos
+                data_aquisicao TEXT
             )
         """
         )
@@ -41,7 +45,16 @@ def init_db():
 init_db()
 
 
-CAMPOS_OBRIGATORIOS = ["titulo", "tipo", "cidade", "preco"]
+CAMPOS_OBRIGATORIOS = [
+    "logradouro",
+    "tipo_logradouro",
+    "bairro",
+    "cidade",
+    "cep",
+    "tipo",
+    "valor",
+    "data_aquisicao",
+]
 
 
 def campos_faltando(dados):
@@ -96,22 +109,13 @@ def adicionar_imovel():
 
     conn = get_db_connection()
     with conn.cursor() as cursor:
-        sql = "INSERT INTO imoveis (titulo, tipo, cidade, preco) VALUES (%s, %s, %s, %s)"
-        cursor.execute(
-            sql,
-            (dados["titulo"], dados["tipo"], dados["cidade"], dados["preco"]),
-        )
+        sql = f"INSERT INTO imoveis ({', '.join(CAMPOS_OBRIGATORIOS)}) VALUES ({', '.join(['%s'] * len(CAMPOS_OBRIGATORIOS))})"
+        cursor.execute(sql, [dados[c] for c in CAMPOS_OBRIGATORIOS])
         novo_id = cursor.lastrowid
     conn.commit()
     conn.close()
 
-    novo_imovel = {
-        "id": novo_id,
-        "titulo": dados["titulo"],
-        "tipo": dados["tipo"],
-        "cidade": dados["cidade"],
-        "preco": dados["preco"],
-    }
+    novo_imovel = {"id": novo_id, **{c: dados[c] for c in CAMPOS_OBRIGATORIOS}}
     return jsonify(adicionar_links(novo_imovel)), 201
 
 
@@ -145,17 +149,8 @@ def atualizar_imovel(imovel_id):
             conn.close()
             return jsonify({"erro": "Imóvel não encontrado"}), 404
 
-        sql = "UPDATE imoveis SET titulo=%s, tipo=%s, cidade=%s, preco=%s WHERE id=%s"
-        cursor.execute(
-            sql,
-            (
-                dados["titulo"],
-                dados["tipo"],
-                dados["cidade"],
-                dados["preco"],
-                imovel_id,
-            ),
-        )
+        sql = f"UPDATE imoveis SET {', '.join(f'{c}=%s' for c in CAMPOS_OBRIGATORIOS)} WHERE id=%s"
+        cursor.execute(sql, [dados[c] for c in CAMPOS_OBRIGATORIOS] + [imovel_id])
         conn.commit()
 
         cursor.execute("SELECT * FROM imoveis WHERE id = %s", (imovel_id,))
