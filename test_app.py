@@ -1,21 +1,28 @@
-import os
-import pymysql
-import pytest
-from dotenv import load_dotenv
+# ============================================================================
+# test_app.py -> TESTES AUTOMÁTICOS
+# Teste automático = código que usa a sua API sozinho e confere se a resposta é a esperada.
+# Rodar com o comando:  pytest
+# "assert X" significa "afirmo que X é verdade"; se for falso, o teste FALHA.
+# ============================================================================
+import os  # ler/alterar variáveis de ambiente
+import pymysql  # conversar com o MySQL
+import pytest  # framework de testes
+from dotenv import load_dotenv  # ler o .env
 
 # Os testes usam um banco separado (ex: defaultdb_teste) para não sujar os dados reais
-load_dotenv()
-os.environ["DB_NAME"] += "_teste"
-with pymysql.connect(
+load_dotenv()  # carrega as variáveis do .env
+os.environ["DB_NAME"] += "_teste"  # troca o nome do banco para "<nome>_teste" ANTES de importar o app
+with pymysql.connect(  # conecta SEM escolher banco (ele talvez ainda não exista)
     host=os.getenv("DB_HOST"),
     port=int(os.getenv("DB_PORT", 3306)),
     user=os.getenv("DB_USER"),
     password=os.getenv("DB_PASSWORD"),
     ssl={"ssl": {}},
-) as conn:
+) as conn:  # "with" fecha a conexão sozinho no final
+    # cria o banco de teste se ainda não existir
     conn.cursor().execute(f"CREATE DATABASE IF NOT EXISTS {os.environ['DB_NAME']}")
 
-from app import app
+from app import app  # só agora importa o app (ele já vai usar o banco de teste)
 
 
 # Imóvel base no formato da tabela do imoveis.sql
@@ -32,21 +39,24 @@ IMOVEL = {
 
 
 def imovel(**campos):
+    # Devolve uma cópia do IMOVEL base trocando só os campos passados.
+    # Ex: imovel(tipo="terreno") -> igual ao base, mas com tipo="terreno".
+    # **campos = recebe argumentos nomeados como dicionário; o segundo ** espalha os dicts (o da direita vence).
     return {**IMOVEL, **campos}
 
 
-@pytest.fixture
+@pytest.fixture  # fixture = preparação que o pytest entrega aos testes que a pedirem
 def client():
-    app.config["TESTING"] = True
-    with app.test_client() as client:
-        yield client
+    app.config["TESTING"] = True  # modo de teste do Flask (erros viram exceções visíveis)
+    with app.test_client() as client:  # test_client = "navegador falso" que faz requisições sem subir servidor
+        yield client  # entrega o client ao teste; depois do teste, o "with" limpa tudo
 
 
-def test_listar_todos_imoveis_retorna_200_e_lista(client):
-    response = client.get("/imoveis")
-    assert response.status_code == 200
-    assert response.is_json
-    assert isinstance(response.get_json(), list)
+def test_listar_todos_imoveis_retorna_200_e_lista(client):  # o pytest acha funções que começam com "test_"
+    response = client.get("/imoveis")  # faz GET /imoveis
+    assert response.status_code == 200  # código HTTP tem que ser 200 (OK)
+    assert response.is_json  # a resposta tem que ser JSON
+    assert isinstance(response.get_json(), list)  # o JSON tem que ser uma lista
 
 def test_adicionar_imovel_com_sucesso(client):
     # Faz um POST enviando dados no formato JSON
@@ -56,26 +66,26 @@ def test_adicionar_imovel_com_sucesso(client):
     assert response.status_code == 201
     assert response.is_json
 
-    dados = response.get_json()
-    assert "id" in dados
-    assert dados["logradouro"] == "Rua das Flores"
+    dados = response.get_json()  # converte a resposta JSON em dict Python
+    assert "id" in dados  # o banco tem que ter gerado um id
+    assert dados["logradouro"] == "Rua das Flores"  # e o dado tem que voltar igual
 
 
 
 def test_adicionar_imovel_sem_campos_obrigatorios_retorna_400(client):
-    response = client.post("/imoveis", json={"logradouro": "Rua Incompleta"})
-    assert response.status_code == 400
+    response = client.post("/imoveis", json={"logradouro": "Rua Incompleta"})  # manda só 1 campo
+    assert response.status_code == 400  # tem que dar erro do cliente
 
 
 def test_buscar_imovel_por_id_com_sucesso(client):
     novo = imovel(logradouro="Estrada do Sitio", tipo="terreno", cidade="Ibiuna", valor=200000.0)
-    res_post = client.post("/imoveis", json=novo)
-    imovel_id = res_post.get_json()["id"]
+    res_post = client.post("/imoveis", json=novo)  # cria um imóvel
+    imovel_id = res_post.get_json()["id"]  # guarda o id gerado
 
-    response = client.get(f"/imoveis/{imovel_id}")
+    response = client.get(f"/imoveis/{imovel_id}")  # busca pelo id
     assert response.status_code == 200
     dados = response.get_json()
-    assert dados["logradouro"] == "Estrada do Sitio"
+    assert dados["logradouro"] == "Estrada do Sitio"  # confere cada campo
     assert dados["tipo"] == "terreno"
     assert dados["cidade"] == "Ibiuna"
     assert dados["valor"] == 200000.0
@@ -100,6 +110,7 @@ def test_atualizar_imovel_sem_campos_obrigatorios_retorna_400(client):
     res_post = client.post("/imoveis", json=IMOVEL)
     imovel_id = res_post.get_json()["id"]
 
+    # PUT com dados incompletos -> 400
     response = client.put(f"/imoveis/{imovel_id}", json={"logradouro": "Sem os outros campos"})
     assert response.status_code == 400
 
@@ -108,7 +119,7 @@ def test_atualizar_imovel_nao_encontrado(client):
     # Tentamos atualizar um ID inexistente
     response = client.put("/imoveis/999999", json=IMOVEL)
 
-    assert response.status_code == 404
+    assert response.status_code == 404  # 404 = não encontrado
 def test_remover_imovel_com_sucesso(client):
     # 1. Cria um imóvel temporário para deletar
     novo = imovel(tipo="terreno", cidade="Curitiba", valor=150000.0)
@@ -117,7 +128,7 @@ def test_remover_imovel_com_sucesso(client):
 
     # 2. Faz a requisição DELETE
     response = client.delete(f"/imoveis/{imovel_id}")
-    assert response.status_code == 204
+    assert response.status_code == 204  # 204 = apagou, sem conteúdo na resposta
 
     # 3. Prova real: tenta buscar o imóvel deletado e espera receber 404
     res_get = client.get(f"/imoveis/{imovel_id}")
@@ -125,7 +136,7 @@ def test_remover_imovel_com_sucesso(client):
 
 
 def test_remover_imovel_nao_encontrado(client):
-    response = client.delete("/imoveis/999999")
+    response = client.delete("/imoveis/999999")  # id que não existe
     assert response.status_code == 404
 
 def test_filtrar_imoveis_por_tipo(client):
@@ -138,8 +149,8 @@ def test_filtrar_imoveis_por_tipo(client):
     assert response.status_code == 200
 
     dados = response.get_json()
-    assert len(dados) >= 1
-    assert all(i["tipo"] == "casa" for i in dados)
+    assert len(dados) >= 1  # veio pelo menos um
+    assert all(i["tipo"] == "casa" for i in dados)  # all() = TODOS os itens precisam ser "casa"
 
 
 def test_filtrar_imoveis_por_cidade(client):
